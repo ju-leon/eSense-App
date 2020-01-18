@@ -18,12 +18,22 @@ import 'dart:convert';
 import 'package:semaphore/semaphore.dart';
 
 class Scanning extends StatefulWidget {
+  int eventId;
+
   @override
-  _ScanningState createState() => _ScanningState();
+  _ScanningState createState() => _ScanningState(eventId);
+
+  Scanning(this.eventId);
 }
 
 class _ScanningState extends State<Scanning> {
   String result = "Hey there !";
+
+  int eventId;
+
+  int id;
+  String username;
+  bool wrongEvent = false;
 
   Future _scanQR() async {
     print("Was here");
@@ -31,13 +41,14 @@ class _ScanningState extends State<Scanning> {
     try {
       String qrResult = await BarcodeScanner.scan();
       setState(() {
-        result = qrResult;
-        Navigator.push(
-          context,
-          new MaterialPageRoute(builder: (context) => new Ticket(username: result.split(';')[1], eventid: int.parse(result.split(';')[0]))),
-        );
-        print("Result: " + result);
+        username = qrResult.split(';')[1];
+        id = int.parse(qrResult.split(';')[0]);
+
+        if (id != eventId) {
+          wrongEvent = true;
+        }
       });
+      _changeScreen();
     } on PlatformException catch (ex) {
       if (ex.code == BarcodeScanner.CameraAccessDenied) {
         setState(() {
@@ -49,9 +60,7 @@ class _ScanningState extends State<Scanning> {
         });
       }
     } on FormatException {
-      setState(() {
-        result = "You pressed the back button before scanning anything";
-      });
+      Navigator.pop(context);
     } catch (ex) {
       setState(() {
         result = "Unknown Error $ex";
@@ -59,8 +68,28 @@ class _ScanningState extends State<Scanning> {
     }
   }
 
-  _ScanningState() {
+  _changeScreen() async {
+    bool stopScanning = await Navigator.push(
+        context,
+        new MaterialPageRoute(
+          builder: (context) => new Ticket(
+              username: username, eventid: id, wrongEvent: wrongEvent),
+        ));
+    if (!stopScanning) {
+      _scanQR();
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
+  _ScanningState(seventId) {
+    this.eventId = seventId;
     _scanQR();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    print('state = $state');
   }
 
   @override

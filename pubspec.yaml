@@ -32,6 +32,7 @@ dependencies:
   http: 0.12.0+4
   semaphore: 0.1.4
   intl: ^0.16.1
+  flutter_spinkit: "^4.1.1"
 
 dev_dependencies:
   flutter_test:

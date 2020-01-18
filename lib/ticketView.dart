@@ -15,9 +15,10 @@ import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:semaphore/semaphore.dart';
 
-const db_url = 'http://192.168.0.107:8080';
+const db_url = 'https://api.jungemeyer.com';
+const predict_url = 'http://compute.jungemeyer.com';
 
-Future<Ticket> queryTicket(username, eventid) async {
+Future<Ticket> queryTicket(username, eventid, wrongEvent) async {
   final response = await http.get(
       db_url +
           "/event/public/getTicket?event_id=" +
@@ -32,7 +33,7 @@ Future<Ticket> queryTicket(username, eventid) async {
 
   if (response.statusCode == 200) {
     // If server returns an OK response, parse the JSON.
-    return Ticket.fromJson(json.decode(response.body));
+    return Ticket.fromJson(json.decode(response.body), wrongEvent);
   } else {
     // If that response was not OK, throw an error.
     throw Exception('Failed to load post');
@@ -42,6 +43,7 @@ Future<Ticket> queryTicket(username, eventid) async {
 class Ticket extends StatefulWidget {
   final int eventid;
   final String username;
+  final String status;
 
   final Map<String, dynamic> user;
   final Map<String, dynamic> event;
@@ -50,27 +52,34 @@ class Ticket extends StatefulWidget {
 
   final DateTime age;
 
+  final bool wrongEvent;
+
   Ticket(
       {this.eventid,
       this.username,
       this.user,
       this.event,
       this.checkIn,
-      this.age});
+      this.age,
+      this.status,
+      this.wrongEvent});
 
-  factory Ticket.fromJson(Map<String, dynamic> json) {
+  factory Ticket.fromJson(Map<String, dynamic> json, wrongEvent) {
     return Ticket(
       eventid: json['event']['id'],
       username: json['participant']['username'],
       user: json['participant'],
       event: json['event'],
       checkIn: json['checkedIn'],
+      status: json['status'],
       age: DateTime.parse(json['participant']['birthday'] + " 00:00:00"),
+      wrongEvent: wrongEvent,
     );
   }
 
   @override
-  _TicketViewState createState() => _TicketViewState(username, eventid);
+  _TicketViewState createState() =>
+      _TicketViewState(username, eventid, wrongEvent);
 }
 
 class _TicketViewState extends State<Ticket> {
@@ -78,25 +87,33 @@ class _TicketViewState extends State<Ticket> {
 
   var _username;
   var _eventId;
+  var _wrongEvent;
   var _event;
   var _measures = [];
+  var _status;
 
   var _prediction = "EMPTY";
 
   final _sm = LocalSemaphore(1);
   bool sampling = false;
 
-  _TicketViewState(this._username, this._eventId);
+  _TicketViewState(this._username, this._eventId, this._wrongEvent);
 
   StreamSubscription subscription;
 
-  Future<bool> checkin(username, eventid) async {
+  Future<bool> checkin(username, eventid, status) async {
+    if(_wrongEvent){
+      return null;
+    }
+
     final response = await http.put(
         db_url +
             "/event/public/checkIn?event_id=" +
             eventid.toString() +
             "&username=" +
-            username,
+            username +
+            "&state=" +
+            status,
         headers: {
           "Content-Type": "application/json",
           HttpHeaders.authorizationHeader:
@@ -151,13 +168,11 @@ class _TicketViewState extends State<Ticket> {
       return;
     }
 
-    var url = 'http://192.168.0.107:5000/predict';
-
     await _sm.acquire();
     String json = _measures.toString();
     _sm.release();
 
-    var response = await http.post(url,
+    var response = await http.post(predict_url + "/predict",
         headers: {"Content-Type": "application/json"}, body: json);
 
     print('Response status: ${response.statusCode}');
@@ -170,21 +185,18 @@ class _TicketViewState extends State<Ticket> {
         {
           _prediction = "NO";
           _pauseListenToSensorEvents();
-          Navigator.push(
-            context,
-            new MaterialPageRoute(builder: (context) => new Scanning()),
-          );
+          await checkin(_username, _eventId, "refused");
+          _pauseListenToSensorEvents();
+          Navigator.pop(context, false);
         }
         break;
       case 'yes':
         {
           _prediction = "YES";
           _pauseListenToSensorEvents();
-          await checkin(_username, _eventId);
-          Navigator.push(
-            context,
-            new MaterialPageRoute(builder: (context) => new Scanning()),
-          );
+          await checkin(_username, _eventId, "entered");
+          _pauseListenToSensorEvents();
+          Navigator.pop(context, false);
         }
         break;
       default:
@@ -203,16 +215,10 @@ class _TicketViewState extends State<Ticket> {
     });
   }
 
-  void dispose() {
-    _pauseListenToSensorEvents();
-    //ESenseManager.disconnect();
-    super.dispose();
-  }
-
   @override
   void initState() {
     super.initState();
-    ticket = queryTicket(_username, _eventId);
+    ticket = queryTicket(_username, _eventId, _wrongEvent);
     _startListenToSensorEvents();
     ESenseManager.setSamplingRate(100);
     predict();
@@ -239,6 +245,45 @@ class _TicketViewState extends State<Ticket> {
       Icons.done,
       color: Colors.green,
       size: 200,
+    );
+  }
+
+  Text getStatus(status) {
+    if (_wrongEvent) {
+      return Text(
+        "TICKET NOT VALID FOR EVENT",
+        style: TextStyle(
+          fontSize: 60,
+          color: Colors.red,
+        ),
+      );
+    }
+
+    if (status == "refused") {
+      return Text(
+        "Ticket refused",
+        style: TextStyle(
+          fontSize: 50,
+          color: Colors.red,
+        ),
+      );
+    }
+    if (status == "entered") {
+      return Text(
+        "Already entered",
+        style: TextStyle(
+          fontSize: 50,
+          color: Colors.red,
+        ),
+      );
+    }
+
+    return Text(
+      "Ticket valid",
+      style: TextStyle(
+        fontSize: 50,
+        color: Colors.green,
+      ),
     );
   }
 
@@ -269,7 +314,7 @@ class _TicketViewState extends State<Ticket> {
                     ),
                   ),
                   Text(
-                    "Alter: " +
+                    "age: " +
                         (DateTime.now().difference(snapshot.data.age).inDays /
                                 365)
                             .floor()
@@ -283,16 +328,10 @@ class _TicketViewState extends State<Ticket> {
                         ")",
                     style: TextStyle(
                       fontSize: 32,
-                      color: Colors.red,
-                    ),
-                  ),
-                  Text(
-                    "Text",
-                    style: TextStyle(
-                      fontSize: 32,
                       color: Colors.black87,
                     ),
                   ),
+                  getStatus(snapshot.data.status),
                   Spacer(),
                   Center(
                     child: getIcon(),

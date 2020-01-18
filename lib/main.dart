@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:esense/eventCard.dart';
 import 'package:esense/scanningView.dart';
 import 'package:esense/ticketView.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ import 'package:tflite/tflite.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:semaphore/semaphore.dart';
+import 'package:flutter_spinkit/flutter_spinkit.dart';
 
 void main() => runApp(MyApp());
 
@@ -24,10 +26,28 @@ class MyApp extends StatefulWidget {
   _MyAppState createState() => _MyAppState();
 }
 
+Future<List<Event>> queryEvents() async {
+  final response = await http.get(db_url + "/event/private/list", headers: {
+    "Content-Type": "application/json",
+    HttpHeaders.authorizationHeader:
+        "Basic " + base64Encode(utf8.encode('max:123456'))
+  });
+
+  if (response.statusCode == 200) {
+    // If server returns an OK response, parse the JSON.
+    Iterable l = json.decode(response.body);
+    List<Event> events = l.map((i) => Event.fromJson(i)).toList();
+    return events;
+  } else {
+    // If that response was not OK, throw an error.
+    throw Exception('Failed to load post');
+  }
+}
+
 class _MyAppState extends State<MyApp> {
   String _deviceName = 'Unknown';
   double _voltage = -1;
-  String _deviceStatus = '';
+  ConnectionType _status = ConnectionType.unknown;
   bool sampling = false;
   String _event = '';
   String _button = 'not pressed';
@@ -41,6 +61,8 @@ class _MyAppState extends State<MyApp> {
 
   // the name of the eSense device to connect to -- change this to your own device.
   String eSenseName = 'eSense-0176';
+
+  bool isConnected = false;
 
   final _sm = LocalSemaphore(1);
 
@@ -61,31 +83,11 @@ class _MyAppState extends State<MyApp> {
       if (event.type == ConnectionType.connected) _listenToESenseEvents();
 
       setState(() {
-        switch (event.type) {
-          case ConnectionType.connected:
-            _deviceStatus = 'connected';
-            break;
-          case ConnectionType.unknown:
-            _deviceStatus = 'unknown';
-            break;
-          case ConnectionType.disconnected:
-            _deviceStatus = 'disconnected';
-            break;
-          case ConnectionType.device_found:
-            _deviceStatus = 'device_found';
-            break;
-          case ConnectionType.device_not_found:
-            _deviceStatus = 'device_not_found';
-            break;
-        }
+        _status = event.type;
       });
     });
 
-    con = await ESenseManager.connect(eSenseName);
-
-    setState(() {
-      _deviceStatus = con ? 'connecting' : 'connection failed';
-    });
+    isConnected = await ESenseManager.connect(eSenseName);
   }
 
   void _listenToESenseEvents() async {
@@ -149,69 +151,93 @@ class _MyAppState extends State<MyApp> {
 
   StreamSubscription subscription;
 
-  Future<String> get _localPath async {
-    final directory = await DownloadsPathProvider.downloadsDirectory;
-
-    return directory.path;
+  reconnect() {
+    setState(() {
+      _status = ConnectionType.unknown;
+    });
+    ESenseManager.disconnect();
+    _connectToESense();
   }
 
-  Future<File> get _localFile async {
-    final path = await _localPath;
-    _fileNumber++;
-    print(path);
-    DateTime now = DateTime.now();
-    return File('$path/nothing' +
-        _fileNumber.toString() +
-        now.toIso8601String() +
-        '.txt');
-  }
-
-  Future<File> writeData(List list) async {
-    final file = await _localFile;
-
-    //var permissions = await Permission.getPermissionsStatus([PermissionName.Calendar, PermissionName.Camera]);
-    Map<PermissionGroup, PermissionStatus> permissions =
-        await PermissionHandler().requestPermissions([PermissionGroup.storage]);
-
-    return file.writeAsString('$list');
+  FloatingActionButton fab() {
+    switch (_status) {
+      case ConnectionType.connected:
+        return new FloatingActionButton(
+            child: Icon(Icons.bluetooth_connected),
+            onPressed: ESenseManager.disconnect);
+      case ConnectionType.unknown:
+        return new FloatingActionButton(
+          onPressed: null,
+          child: SpinKitRotatingCircle(
+            color: Colors.white,
+            size: 50.0,
+          ),
+        );
+      case ConnectionType.disconnected:
+        return new FloatingActionButton(
+            child: Icon(Icons.bluetooth_disabled), onPressed: reconnect);
+      case ConnectionType.device_found:
+        return new FloatingActionButton(
+            child: SpinKitDoubleBounce(
+              color: Colors.white,
+              size: 50.0,
+            ),
+            onPressed: null);
+      case ConnectionType.device_not_found:
+        return new FloatingActionButton(
+            child: Icon(Icons.device_unknown), onPressed: reconnect);
+    }
   }
 
   Widget build(BuildContext context) {
-    return MaterialApp(home: HomeScreen());
+    return MaterialApp(
+        home: new Scaffold(
+            appBar: AppBar(
+              title: const Text('Connect Scanner'),
+            ),
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: HomeScreen(),
+            ),
+            floatingActionButton: fab()));
   }
 }
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
+  @override
+  _HomeScreenState createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  Future<List<Event>> events;
+
+  @override
+  void initState() {
+    super.initState();
+    events = queryEvents();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return new Scaffold(
-      appBar: AppBar(
-        title: const Text('eSense Demo App'),
-      ),
-      body: Align(
-        alignment: Alignment.topLeft,
-        child: ListView(
-          children: [
-            Text('Hello World'),
-          ],
-        ),
-      ),
-      floatingActionButton: new FloatingActionButton(
-        // a floating button that starts/stops listening to sensor events.
-        // is disabled until we're connected to the device.
-        onPressed: () {
-          Navigator.push(
-            context,
-            new MaterialPageRoute(builder: (context) => new Scanning()),
+    return FutureBuilder<List<Event>>(
+      future: events,
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          return new ListView.builder(
+            itemCount: snapshot.data.length == null ? 0 : snapshot.data.length,
+            itemBuilder: (BuildContext context, i) {
+              return snapshot.data[i];
+            },
           );
-        },
-      ),
+        } else if (snapshot.hasError) {
+          return Text("${snapshot.error}");
+        }
+
+        // By default, show a loading spinner.
+        return Center(child: CircularProgressIndicator());
+      },
     );
+
+    return Align(alignment: Alignment.topLeft, child: Center(child: Event()));
   }
 }
-
-/*
-onPressed: (!ESenseManager.connected)
-              ? null
-              : (!sampling) ? _startReading : _pauseListenToSensorEvents,
- */
