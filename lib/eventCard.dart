@@ -20,6 +20,8 @@ class Event extends StatefulWidget {
   final int id;
   final String description;
 
+  bool disabled = true;
+
   Event({this.title, this.id, this.description});
 
   factory Event.fromJson(Map<String, dynamic> json) {
@@ -52,7 +54,7 @@ class _EventViewState extends State<Event> {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             ListTile(
-              leading: Icon(Icons.album),
+              leading: Icon(Icons.calendar_today),
               title: Text(event.title),
               subtitle: Text(event.description),
             ),

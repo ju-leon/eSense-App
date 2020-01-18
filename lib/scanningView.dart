@@ -27,7 +27,7 @@ class Scanning extends StatefulWidget {
 }
 
 class _ScanningState extends State<Scanning> {
-  String result = "Hey there !";
+  String result = "";
 
   int eventId;
 
@@ -63,7 +63,7 @@ class _ScanningState extends State<Scanning> {
       Navigator.pop(context);
     } catch (ex) {
       setState(() {
-        result = "Unknown Error $ex";
+        result = "Not a valid Ticket";
       });
     }
   }
@@ -75,7 +75,7 @@ class _ScanningState extends State<Scanning> {
           builder: (context) => new Ticket(
               username: username, eventid: id, wrongEvent: wrongEvent),
         ));
-    if (!stopScanning) {
+    if (stopScanning == null || !stopScanning) {
       _scanQR();
     } else {
       Navigator.pop(context);
@@ -96,17 +96,25 @@ class _ScanningState extends State<Scanning> {
   Widget build(BuildContext context) {
     return new Scaffold(
       appBar: AppBar(
-        title: const Text('eSense Demo App'),
+        title: const Text('Ticket'),
+        backgroundColor: Colors.purple,
+
       ),
       body: Align(
         alignment: Alignment.topLeft,
-        child: ListView(
-          children: [
-            Text(result),
-          ],
+        child: Center(
+          child: Text(
+            result,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 45,
+              color: Colors.black87,
+            ),
+          ),
         ),
       ),
       floatingActionButton: new FloatingActionButton(
+        child: new Icon(Icons.camera_alt),
         // a floating button that starts/stops listening to sensor events.
         // is disabled until we're connected to the device.
         onPressed: () {

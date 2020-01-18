@@ -4,6 +4,7 @@ import 'package:esense/main.dart';
 import 'package:esense_flutter/esense.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
@@ -102,7 +103,7 @@ class _TicketViewState extends State<Ticket> {
   StreamSubscription subscription;
 
   Future<bool> checkin(username, eventid, status) async {
-    if(_wrongEvent){
+    if (_wrongEvent) {
       return null;
     }
 
@@ -133,32 +134,34 @@ class _TicketViewState extends State<Ticket> {
     // subscribe to sensor event from the eSense device
     print("Sart listening");
 
-    subscription = ESenseManager.sensorEvents.listen((event) async {
-      print('SENSOR event: $event');
-      setState(() {
-        _event = event.toString();
+    if (MyAppState.status == ConnectionType.connected) {
+      subscription = ESenseManager.sensorEvents.listen((event) async {
+        print('SENSOR event: $event');
+        setState(() {
+          _event = event.toString();
+        });
+
+        await _sm.acquire();
+        for (int i = 0; i < 3; i++) {
+          if (_measures.length == 300) {
+            _measures.removeAt(0);
+          }
+          _measures.add(event.accel[i]);
+        }
+        for (int i = 0; i < 3; i++) {
+          if (_measures.length == 300) {
+            _measures.removeAt(0);
+          }
+          _measures.add(event.gyro[i]);
+        }
+
+        _sm.release();
       });
 
-      await _sm.acquire();
-      for (int i = 0; i < 3; i++) {
-        if (_measures.length == 300) {
-          _measures.removeAt(0);
-        }
-        _measures.add(event.accel[i]);
-      }
-      for (int i = 0; i < 3; i++) {
-        if (_measures.length == 300) {
-          _measures.removeAt(0);
-        }
-        _measures.add(event.gyro[i]);
-      }
-
-      _sm.release();
-    });
-
-    setState(() {
-      sampling = true;
-    });
+      setState(() {
+        sampling = true;
+      });
+    }
   }
 
   Future<void> predict() async {
@@ -185,18 +188,14 @@ class _TicketViewState extends State<Ticket> {
         {
           _prediction = "NO";
           _pauseListenToSensorEvents();
-          await checkin(_username, _eventId, "refused");
-          _pauseListenToSensorEvents();
-          Navigator.pop(context, false);
+          handleRefusedPress();
         }
         break;
       case 'yes':
         {
           _prediction = "YES";
           _pauseListenToSensorEvents();
-          await checkin(_username, _eventId, "entered");
-          _pauseListenToSensorEvents();
-          Navigator.pop(context, false);
+          handleOkPress();
         }
         break;
       default:
@@ -208,11 +207,23 @@ class _TicketViewState extends State<Ticket> {
     }
   }
 
+  void handleOkPress() async {
+    await checkin(_username, _eventId, "entered");
+    Navigator.pop(context, false);
+  }
+
+  void handleRefusedPress() async {
+    await checkin(_username, _eventId, "refused");
+    Navigator.pop(context, false);
+  }
+
   void _pauseListenToSensorEvents() async {
-    subscription.cancel();
-    setState(() {
-      sampling = false;
-    });
+    if (MyAppState.status == ConnectionType.connected) {
+      subscription.cancel();
+      setState(() {
+        sampling = false;
+      });
+    }
   }
 
   @override
@@ -224,7 +235,15 @@ class _TicketViewState extends State<Ticket> {
     predict();
   }
 
-  Icon getIcon() {
+  Widget getIcon() {
+    if (MyAppState.status != ConnectionType.connected) {
+      return Icon(
+        Icons.bluetooth_disabled,
+        color: Colors.blue,
+        size: 50,
+      );
+    }
+
     if (_prediction == "NO") {
       return Icon(
         Icons.clear,
@@ -234,8 +253,7 @@ class _TicketViewState extends State<Ticket> {
     }
 
     if (_prediction == "EMPTY") {
-      return Icon(
-        Icons.hearing,
+      return SpinKitRipple(
         color: Colors.black87,
         size: 200,
       );
@@ -252,8 +270,9 @@ class _TicketViewState extends State<Ticket> {
     if (_wrongEvent) {
       return Text(
         "TICKET NOT VALID FOR EVENT",
+        textAlign: TextAlign.center,
         style: TextStyle(
-          fontSize: 60,
+          fontSize: 40,
           color: Colors.red,
         ),
       );
@@ -262,8 +281,9 @@ class _TicketViewState extends State<Ticket> {
     if (status == "refused") {
       return Text(
         "Ticket refused",
+        textAlign: TextAlign.center,
         style: TextStyle(
-          fontSize: 50,
+          fontSize: 40,
           color: Colors.red,
         ),
       );
@@ -271,17 +291,19 @@ class _TicketViewState extends State<Ticket> {
     if (status == "entered") {
       return Text(
         "Already entered",
+        textAlign: TextAlign.center,
         style: TextStyle(
-          fontSize: 50,
-          color: Colors.red,
+          fontSize: 40,
+          color: Colors.yellow,
         ),
       );
     }
 
     return Text(
       "Ticket valid",
+      textAlign: TextAlign.center,
       style: TextStyle(
-        fontSize: 50,
+        fontSize: 40,
         color: Colors.green,
       ),
     );
@@ -292,6 +314,7 @@ class _TicketViewState extends State<Ticket> {
     return Scaffold(
         appBar: AppBar(
           title: Text('Ticket'),
+          backgroundColor: Colors.purple,
         ),
         body: FutureBuilder<Ticket>(
           future: ticket,
@@ -337,6 +360,22 @@ class _TicketViewState extends State<Ticket> {
                     child: getIcon(),
                   ),
                   Spacer(),
+                  ButtonBar(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      new FloatingActionButton(
+                          heroTag: "okBtn",
+                          backgroundColor: Colors.green[400],
+                          child: Icon(Icons.check),
+                          onPressed: handleOkPress),
+                      SizedBox(height: 50),
+                      new FloatingActionButton(
+                          heroTag: "refBtn",
+                          backgroundColor: Colors.red[400],
+                          child: Icon(Icons.clear),
+                          onPressed: handleRefusedPress),
+                    ],
+                  )
                 ],
               );
             } else if (snapshot.hasError) {
@@ -347,43 +386,5 @@ class _TicketViewState extends State<Ticket> {
             return Center(child: CircularProgressIndicator());
           },
         ));
-
-    /*
-        
-        Column(
-          children: <Widget>[
-            Center(
-              child: Image.network(db_url +
-                  "/user/profile?user=" +
-                  _jsonResponse['participant']['username']),
-            ),
-            Text(
-              "Max Mustermann",
-              style: TextStyle(
-                fontSize: 45,
-                color: Colors.black87,
-              ),
-            ),
-            Text(
-              "Alter: 22 (06.10.1997)",
-              style: TextStyle(
-                fontSize: 32,
-                color: Colors.red,
-              ),
-            ),
-            Text(
-              "Verified",
-              style: TextStyle(
-                fontSize: 32,
-                color: Colors.black87,
-              ),
-            ),
-            Spacer(),
-            Center(
-              child: new CircularProgressIndicator(),
-            ),
-            Spacer(),
-          ],
-        ));*/
   }
 }

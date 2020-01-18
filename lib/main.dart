@@ -23,11 +23,11 @@ void main() => runApp(MyApp());
 
 class MyApp extends StatefulWidget {
   @override
-  _MyAppState createState() => _MyAppState();
+  MyAppState createState() => MyAppState();
 }
 
 Future<List<Event>> queryEvents() async {
-  final response = await http.get(db_url + "/event/private/list", headers: {
+  final response = await http.get(db_url + "/company/events", headers: {
     "Content-Type": "application/json",
     HttpHeaders.authorizationHeader:
         "Basic " + base64Encode(utf8.encode('max:123456'))
@@ -44,25 +44,19 @@ Future<List<Event>> queryEvents() async {
   }
 }
 
-class _MyAppState extends State<MyApp> {
+class MyAppState extends State<MyApp> {
   String _deviceName = 'Unknown';
   double _voltage = -1;
-  ConnectionType _status = ConnectionType.unknown;
+  static ConnectionType status = ConnectionType.unknown;
   bool sampling = false;
   String _event = '';
   String _button = 'not pressed';
   int _accel = 0;
 
-  List<int> _measures;
-  int _count = 0;
-  int _fileNumber = 0;
-
-  String _prediction = "NONE";
-
   // the name of the eSense device to connect to -- change this to your own device.
   String eSenseName = 'eSense-0176';
 
-  bool isConnected = false;
+  static bool isConnected = false;
 
   final _sm = LocalSemaphore(1);
 
@@ -83,7 +77,7 @@ class _MyAppState extends State<MyApp> {
       if (event.type == ConnectionType.connected) _listenToESenseEvents();
 
       setState(() {
-        _status = event.type;
+        status = event.type;
       });
     });
 
@@ -153,14 +147,14 @@ class _MyAppState extends State<MyApp> {
 
   reconnect() {
     setState(() {
-      _status = ConnectionType.unknown;
+      status = ConnectionType.unknown;
     });
     ESenseManager.disconnect();
     _connectToESense();
   }
 
   FloatingActionButton fab() {
-    switch (_status) {
+    switch (status) {
       case ConnectionType.connected:
         return new FloatingActionButton(
             child: Icon(Icons.bluetooth_connected),
@@ -191,9 +185,11 @@ class _MyAppState extends State<MyApp> {
 
   Widget build(BuildContext context) {
     return MaterialApp(
+        debugShowCheckedModeBanner: false,
         home: new Scaffold(
             appBar: AppBar(
               title: const Text('Connect Scanner'),
+              backgroundColor: Colors.purple,
             ),
             body: Align(
               alignment: Alignment.topLeft,
@@ -237,7 +233,5 @@ class _HomeScreenState extends State<HomeScreen> {
         return Center(child: CircularProgressIndicator());
       },
     );
-
-    return Align(alignment: Alignment.topLeft, child: Center(child: Event()));
   }
 }
