@@ -89,9 +89,10 @@ class _TicketViewState extends State<Ticket> {
   var _username;
   var _eventId;
   var _wrongEvent;
-  var _event;
   var _measures = [];
   var _status;
+
+  var _readingStarted = false;
 
   var _prediction = "EMPTY";
 
@@ -136,10 +137,8 @@ class _TicketViewState extends State<Ticket> {
 
     if (MyAppState.status == ConnectionType.connected) {
       subscription = ESenseManager.sensorEvents.listen((event) async {
+        _readingStarted = true;
         print('SENSOR event: $event');
-        setState(() {
-          _event = event.toString();
-        });
 
         await _sm.acquire();
         for (int i = 0; i < 3; i++) {
@@ -156,10 +155,6 @@ class _TicketViewState extends State<Ticket> {
         }
 
         _sm.release();
-      });
-
-      setState(() {
-        sampling = true;
       });
     }
   }
@@ -186,16 +181,24 @@ class _TicketViewState extends State<Ticket> {
     switch (jsonRespone['winner']) {
       case 'no':
         {
-          _prediction = "NO";
+          setState(() {
+            _prediction = "NO";
+          });
           _pauseListenToSensorEvents();
-          handleRefusedPress();
+          Future.delayed(const Duration(milliseconds: 500), () {
+            handleRefusedPress();
+          });
         }
         break;
       case 'yes':
         {
-          _prediction = "YES";
+          setState(() {
+            _prediction = "YES";
+          });
           _pauseListenToSensorEvents();
-          handleOkPress();
+          Future.delayed(const Duration(milliseconds: 500), () {
+            handleOkPress();
+          });
         }
         break;
       default:
@@ -220,8 +223,18 @@ class _TicketViewState extends State<Ticket> {
   void _pauseListenToSensorEvents() async {
     if (MyAppState.status == ConnectionType.connected) {
       subscription.cancel();
-      setState(() {
-        sampling = false;
+    }
+  }
+
+  void reengageListening() {
+    if (!_readingStarted) {
+      print("restarted accel reading");
+
+      _pauseListenToSensorEvents();
+      _startListenToSensorEvents();
+
+      Future.delayed(const Duration(milliseconds: 500), () {
+        reengageListening();
       });
     }
   }
@@ -230,8 +243,9 @@ class _TicketViewState extends State<Ticket> {
   void initState() {
     super.initState();
     ticket = queryTicket(_username, _eventId, _wrongEvent);
-    _startListenToSensorEvents();
+    _readingStarted = false;
     ESenseManager.setSamplingRate(100);
+    _startListenToSensorEvents();
     predict();
   }
 

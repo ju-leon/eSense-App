@@ -35,7 +35,7 @@ Future<List<Event>> queryEvents() async {
 
   if (response.statusCode == 200) {
     // If server returns an OK response, parse the JSON.
-    Iterable l = json.decode(response.body);
+    Iterable l = json.decode(utf8.decode(response.bodyBytes));
     List<Event> events = l.map((i) => Event.fromJson(i)).toList();
     return events;
   } else {
