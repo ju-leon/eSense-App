@@ -1,4 +1,4 @@
-# eSense gesture recocnition
+# eSense gesture recognition
 
 Using acceleration and gyroscope data from the headphones, a "Nodding"-Yes or "Headshake"-No is reconized.
 Classification is done on the raw data. Data is sampled at a rate of 50Hz.
