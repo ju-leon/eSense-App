@@ -12,6 +12,11 @@ The Matrix holds the following data:
  
 ```
 
+The neural network recognizes the following classes:
+ - Yes   (A nod is recognized)
+ - No    (A headshake is recognized)
+ - Empty (No gesture is recognized)
+
 Classification is done serverside. 
 The webserver is a flask server found in server.py.
 
